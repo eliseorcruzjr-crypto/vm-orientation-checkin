@@ -267,10 +267,45 @@
         registrationId
       );
 
-      google.script.run
-        .withSuccessHandler(handleCheckInResult)
-        .withFailureHandler(handleCheckInError)
-        .checkInRegistration(registrationId);
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzvjVtNwZJ5aF6K0kPcIDzn2x0Wu0LXkO4Uh0AI6ad7I8ZWdeO2zDPyXkn6Rn92LSUp/exec';
+
+const callbackName = 'checkInCallback_' + Date.now();
+
+window[callbackName] = function(result) {
+  delete window[callbackName];
+
+  const script = document.getElementById(callbackName);
+  if (script) {
+    script.remove();
+  }
+
+  handleCheckInResult(result);
+};
+
+const script = document.createElement('script');
+
+script.id = callbackName;
+
+script.src =
+  APPS_SCRIPT_URL +
+  '?action=checkIn' +
+  '&registrationId=' + encodeURIComponent(registrationId) +
+  '&callback=' + encodeURIComponent(callbackName);
+
+script.onerror = function() {
+  delete window[callbackName];
+
+  const failedScript = document.getElementById(callbackName);
+  if (failedScript) {
+    failedScript.remove();
+  }
+
+  handleCheckInError({
+    message: 'Unable to connect to the registration system.'
+  });
+};
+
+document.body.appendChild(script);
     }
 
 
