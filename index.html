@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>VM Orientation Check-In</title>
+
+  <script src="https://unpkg.com/html5-qrcode"
+          type="text/javascript">
+  </script>
+
+  <style>
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: auto;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 20px;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 500px;
+      margin: auto;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    #result {
+      margin: 20px auto;
+      padding: 20px;
+      max-width: 500px;
+      border-radius: 12px;
+      background: white;
+      min-height: 100px;
+    }
+
+    .success {
+      background: #e8f5e9 !important;
+      color: #1b5e20;
+    }
+
+    .warning {
+      background: #fff8e1 !important;
+      color: #8d6e00;
+    }
+
+    .error {
+      background: #ffebee !important;
+      color: #b71c1c;
+    }
+
+    .scanning {
+      background: #e3f2fd !important;
+      color: #1565c0;
+    }
+
+    .big {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .name {
+      font-size: 22px;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+
+    .registration {
+      font-family: monospace;
+      font-size: 18px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 5px;
+    }
+
+    #startButton {
+      background: #1976d2;
+      color: white;
+    }
+
+    #stopButton {
+      background: #d32f2f;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <h1>VM Orientation</h1>
+
+    <div class="subtitle">
+      Volunteer Check-In
+    </div>
+
+    <div id="reader"></div>
+
+    <div>
+      <button id="startButton"
+              onclick="startScanner()">
+        Start Scanner
+      </button>
+
+      <button id="stopButton"
+              onclick="stopScanner()"
+              disabled>
+        Stop Scanner
+      </button>
+    </div>
+
+    <div id="result" class="scanning">
+      <div class="big">
+        Ready to scan
+      </div>
+
+      Point the camera at the volunteer's QR code.
+    </div>
+
+  </div>
+
+
+  <script>
+
+    let scanner = null;
+    let isProcessing = false;
+
+
+    function startScanner() {
+
+      if (scanner) {
+        return;
+      }
+
+      scanner = new Html5Qrcode("reader");
+
+      const config = {
+        fps: 10,
+        qrbox: {
+          width: 250,
+          height: 250
+        }
+      };
+
+      scanner.start(
+        { facingMode: "environment" },
+        config,
+        onScanSuccess,
+        onScanFailure
+      )
+      .then(function() {
+
+        document.getElementById("startButton")
+          .disabled = true;
+
+        document.getElementById("stopButton")
+          .disabled = false;
+
+        showResult(
+          "scanning",
+          "Scanner is ready",
+          "Point the camera at the volunteer's QR code."
+        );
+
+      })
+      .catch(function(error) {
+
+        scanner = null;
+
+        showResult(
+          "error",
+          "Camera Error",
+          "Unable to access the camera.<br><br>" +
+          error
+        );
+
+      });
+    }
+
+
+    function stopScanner() {
+
+      if (!scanner) {
+        return;
+      }
+
+      scanner.stop()
+        .then(function() {
+
+          scanner.clear();
+          scanner = null;
+
+          document.getElementById("startButton")
+            .disabled = false;
+
+          document.getElementById("stopButton")
+            .disabled = true;
+
+          showResult(
+            "scanning",
+            "Scanner stopped",
+            "Click Start Scanner to begin again."
+          );
+
+        })
+        .catch(function(error) {
+
+          console.error(error);
+
+        });
+    }
+
+
+    function onScanSuccess(decodedText) {
+
+      if (isProcessing) {
+        return;
+      }
+
+      isProcessing = true;
+
+      // The QR code contains the Registration ID.
+      const registrationId =
+        decodedText.trim().toUpperCase();
+
+      showResult(
+        "scanning",
+        "Checking registration...",
+        registrationId
+      );
+
+      google.script.run
+        .withSuccessHandler(handleCheckInResult)
+        .withFailureHandler(handleCheckInError)
+        .checkInRegistration(registrationId);
+    }
+
+
+    function onScanFailure(error) {
+      // Ignore normal scanning failures.
+    }
+
+
+    function handleCheckInResult(result) {
+
+      if (result.type === "CHECKED_IN") {
+
+        showResult(
+          "success",
+          "✓ CHECK-IN SUCCESSFUL",
+          `
+            <div class="name">
+              ${escapeHtml(result.name)}
+            </div>
+
+            <div class="registration">
+              ${escapeHtml(result.registrationId)}
+            </div>
+
+            <p>
+              <strong>Time:</strong>
+              ${escapeHtml(result.checkInTime)}
+            </p>
+          `
+        );
+
+        // Allow another scan after a short delay.
+        setTimeout(function() {
+          isProcessing = false;
+          resetResult();
+        }, 3000);
+
+        return;
+      }
+
+
+      if (result.type === "ALREADY_CHECKED_IN") {
+
+        showResult(
+          "warning",
+          "⚠ ALREADY CHECKED IN",
+          `
+            <div class="name">
+              ${escapeHtml(result.name)}
+            </div>
+
+            <div class="registration">
+              ${escapeHtml(result.registrationId)}
+            </div>
+
+            <p>
+              This volunteer was already checked in.
+            </p>
+
+            <p>
+              <strong>Previous check-in:</strong><br>
+              ${escapeHtml(result.checkInTime)}
+            </p>
+          `
+        );
+
+        setTimeout(function() {
+          isProcessing = false;
+          resetResult();
+        }, 4000);
+
+        return;
+      }
+
+
+      showResult(
+        "error",
+        "✕ INVALID QR CODE",
+        `
+          ${escapeHtml(result.message)}
+          <br><br>
+          ${escapeHtml(result.registrationId || "")}
+        `
+      );
+
+      setTimeout(function() {
+        isProcessing = false;
+        resetResult();
+      }, 3000);
+    }
+
+
+    function handleCheckInError(error) {
+
+      console.error(error);
+
+      showResult(
+        "error",
+        "System Error",
+        "Unable to process this registration.<br><br>" +
+        escapeHtml(error.message || String(error))
+      );
+
+      setTimeout(function() {
+        isProcessing = false;
+        resetResult();
+      }, 4000);
+    }
+
+
+    function resetResult() {
+
+      showResult(
+        "scanning",
+        "Ready to scan",
+        "Point the camera at the volunteer's QR code."
+      );
+    }
+
+
+    function showResult(type, title, message) {
+
+      const result =
+        document.getElementById("result");
+
+      result.className = type;
+
+      result.innerHTML =
+        `<div class="big">${title}</div>` +
+        `<div>${message}</div>`;
+    }
+
+
+    function escapeHtml(text) {
+
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+  </script>
+
+</body>
+</html>
