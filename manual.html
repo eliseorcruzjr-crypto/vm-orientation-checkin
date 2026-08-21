@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>VM Orientation - Manual Check-In</title>
+
+  <style>
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 650px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 25px;
+    }
+
+    .box {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      font-size: 17px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 17px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+
+    #searchButton {
+      background: #1976d2;
+      color: white;
+    }
+
+    .person {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 12px;
+      background: #fafafa;
+    }
+
+    .name {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .details {
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .checkButton {
+      background: #2e7d32;
+      color: white;
+    }
+
+    .already {
+      background: #fff8e1;
+      color: #8d6e00;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    .success {
+      background: #e8f5e9;
+      color: #1b5e20;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      margin-top: 15px;
+    }
+
+    .error {
+      background: #ffebee;
+      color: #b71c1c;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 15px;
+      color: #666;
+    }
+
+  </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+  <h1>VM Orientation</h1>
+
+  <div class="subtitle">
+    Manual Check-In
+  </div>
+
+
+  <div class="box">
+
+    <label for="search">
+      Search volunteer
+    </label>
+
+    <input
+      id="search"
+      type="text"
+      placeholder="Enter name or email"
+      autocomplete="off">
+
+    <button
+      id="searchButton"
+      onclick="searchVolunteer()">
+
+      Search
+
+    </button>
+
+  </div>
+
+
+  <div id="results"></div>
+
+</div>
+
+
+<script>
+
+
+const BACKEND_URL =
+  "https://script.google.com/macros/s/AKfycbzvjVtNwZJ5aF6K0kPcIDzn2x0Wu0LXkO4Uh0AI6ad7I8ZWdeO2zDPyXkn6Rn92LSUp/exec";
+
+
+function searchVolunteer() {
+
+  const search =
+    document
+      .getElementById("search")
+      .value
+      .trim();
+
+
+  if (!search) {
+
+    showError(
+      "Please enter a volunteer name or email address."
+    );
+
+    return;
+  }
+
+
+  document.getElementById(
+    "results"
+  ).innerHTML =
+    '<div class="loading">' +
+    'Searching...' +
+    '</div>';
+
+
+  const callbackName =
+    "searchCallback_" +
+    Date.now();
+
+
+  window[callbackName] =
+    function(result) {
+
+      delete window[callbackName];
+
+      handleSearchResult(result);
+
+    };
+
+
+  const script =
+    document.createElement("script");
+
+
+  script.src =
+    BACKEND_URL +
+    "?action=searchVolunteer" +
+    "&search=" +
+    encodeURIComponent(search) +
+    "&callback=" +
+    callbackName;
+
+
+  script.onerror =
+    function() {
+
+      delete window[callbackName];
+
+      showError(
+        "Unable to contact the check-in server."
+      );
+
+    };
+
+
+  document.body.appendChild(script);
+
+}
+
+
+function handleSearchResult(result) {
+
+  if (!result.success) {
+
+    showError(
+      result.message ||
+      "No results found."
+    );
+
+    return;
+  }
+
+
+  if (
+    !result.results ||
+    result.results.length === 0
+  ) {
+
+    showError(
+      "No volunteer found."
+    );
+
+    return;
+  }
+
+
+  let html = "";
+
+
+  result.results.forEach(
+    function(person) {
+
+      html +=
+        '<div class="person">' +
+
+          '<div class="name">' +
+            escapeHtml(person.name) +
+          '</div>' +
+
+          '<div class="details">' +
+
+            '<strong>Email:</strong> ' +
+            escapeHtml(person.email) +
+            '<br>' +
+
+            '<strong>Registration ID:</strong> ' +
+            escapeHtml(person.registrationId) +
+            '<br>' +
+
+            '<strong>Status:</strong> ' +
+            escapeHtml(person.status) +
+
+          '</div>';
+
+
+      if (
+        person.status ===
+        "CHECKED IN"
+      ) {
+
+        html +=
+          '<div class="already">' +
+            '⚠️ This volunteer is already checked in.' +
+            '<br><br>' +
+            '<strong>Check-in time:</strong><br>' +
+            escapeHtml(person.checkInTime) +
+          '</div>';
+
+      } else {
+
+        html +=
+          '<button class="checkButton" ' +
+          'onclick="manualCheckIn(\'' +
+          escapeAttribute(person.registrationId) +
+          '\')">' +
+          'CHECK IN THIS VOLUNTEER' +
+          '</button>';
+
+      }
+
+
+      html +=
+        '</div>';
+
+    }
+  );
+
+
+  document.getElementById(
+    "results"
+  ).innerHTML = html;
+
+}
+
+
+function manualCheckIn(registrationId) {
+
+  const confirmed =
+    confirm(
+      "Are you sure you want to check in this volunteer?\n\n" +
+      "Registration ID: " +
+      registrationId
+    );
+
+
+  if (!confirmed) {
+    return;
+  }
+
+
+  document.getElementById(
+    "results"
+  ).innerHTML =
+    '<div class="loading">' +
+    'Processing check-in...' +
+    '</div>';
+
+
+  const callbackName =
+    "manualCheckInCallback_" +
+    Date.now();
+
+
+  window[callbackName] =
+    function(result) {
+
+      delete window[callbackName];
+
+      handleManualCheckInResult(result);
+
+    };
+
+
+  const script =
+    document.createElement("script");
+
+
+  script.src =
+    BACKEND_URL +
+    "?action=checkIn" +
+    "&registrationId=" +
+    encodeURIComponent(registrationId) +
+    "&method=MANUAL" +
+    "&callback=" +
+    callbackName;
+
+
+  script.onerror =
+    function() {
+
+      delete window[callbackName];
+
+      showError(
+        "Unable to contact the check-in server."
+      );
+
+    };
+
+
+  document.body.appendChild(script);
+
+}
+
+
+function handleManualCheckInResult(result) {
+
+  if (
+    result.type ===
+    "CHECKED_IN"
+  ) {
+
+    document.getElementById(
+      "results"
+    ).innerHTML =
+
+      '<div class="success">' +
+
+        '<h2>✓ CHECK-IN SUCCESSFUL</h2>' +
+
+        '<div class="name">' +
+          escapeHtml(result.name) +
+        '</div>' +
+
+        '<p>' +
+          '<strong>Registration ID:</strong><br>' +
+          escapeHtml(result.registrationId) +
+        '</p>' +
+
+        '<p>' +
+          '<strong>Check-in time:</strong><br>' +
+          escapeHtml(result.checkInTime) +
+        '</p>' +
+
+      '</div>';
+
+    return;
+  }
+
+
+  if (
+    result.type ===
+    "ALREADY_CHECKED_IN"
+  ) {
+
+    document.getElementById(
+      "results"
+    ).innerHTML =
+
+      '<div class="already">' +
+
+        '<h2>⚠️ ALREADY CHECKED IN</h2>' +
+
+        '<div class="name">' +
+          escapeHtml(result.name) +
+        '</div>' +
+
+        '<p>' +
+          'Previous check-in:<br>' +
+          escapeHtml(result.checkInTime) +
+        '</p>' +
+
+      '</div>';
+
+    return;
+  }
+
+
+  showError(
+    result.message ||
+    "Unable to check in volunteer."
+  );
+
+}
+
+
+function showError(message) {
+
+  document.getElementById(
+    "results"
+  ).innerHTML =
+
+    '<div class="error">' +
+      escapeHtml(message) +
+    '</div>';
+
+}
+
+
+function escapeHtml(text) {
+
+  return String(text || "")
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+    .replace(
+      /</g,
+      "&lt;"
+    )
+    .replace(
+      />/g,
+      "&gt;"
+    )
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+    .replace(
+      /'/g,
+      "&#039;"
+    );
+
+}
+
+
+function escapeAttribute(text) {
+
+  return String(text || "")
+    .replace(
+      /\\/g,
+      "\\\\"
+    )
+    .replace(
+      /'/g,
+      "\\'"
+    );
+
+}
+
+
+document
+  .getElementById("search")
+  .addEventListener(
+    "keypress",
+    function(event) {
+
+      if (
+        event.key === "Enter"
+      ) {
+
+        searchVolunteer();
+
+      }
+
+    }
+  );
+
+
+</script>
+
+</body>
+</html>
