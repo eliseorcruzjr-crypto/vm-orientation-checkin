@@ -1,7 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-  <base target="_top">
+
+  <meta charset="UTF-8">
 
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0">
@@ -27,6 +29,7 @@
     }
 
     .container {
+      width: 100%;
       max-width: 600px;
       margin: auto;
     }
@@ -98,7 +101,7 @@
     button {
       border: none;
       border-radius: 8px;
-      padding: 12px 20px;
+      padding: 14px 22px;
       font-size: 16px;
       cursor: pointer;
       margin: 5px;
@@ -120,7 +123,9 @@
     }
 
   </style>
+
 </head>
+
 
 <body>
 
@@ -135,6 +140,7 @@
     <div id="reader"></div>
 
     <div>
+
       <button id="startButton"
               onclick="startScanner()">
         Start Scanner
@@ -145,311 +151,519 @@
               disabled>
         Stop Scanner
       </button>
+
     </div>
 
     <div id="result" class="scanning">
+
       <div class="big">
         Ready to scan
       </div>
 
       Point the camera at the volunteer's QR code.
+
     </div>
 
   </div>
 
 
-  <script>
+<script>
 
-    let scanner = null;
-    let isProcessing = false;
+/*
+ * YOUR APPS SCRIPT BACKEND
+ */
+const BACKEND_URL =
+  "https://script.google.com/macros/s/AKfycbzvjVtNwZJ5aF6K0kPcIDzn2x0Wu0LXkO4Uh0AI6ad7I8ZWdeO2zDPyXkn6Rn92LSUp/exec";
 
 
-    function startScanner() {
+let scanner = null;
+let isProcessing = false;
 
-      if (scanner) {
-        return;
+
+/*
+ * Start scanner
+ */
+async function startScanner() {
+
+  if (scanner !== null) {
+    return;
+  }
+
+  showResult(
+    "scanning",
+    "Starting camera...",
+    "Please allow camera access if your browser asks."
+  );
+
+  try {
+
+    scanner =
+      new Html5Qrcode("reader");
+
+
+    const cameras =
+      await Html5Qrcode.getCameras();
+
+
+    if (!cameras || cameras.length === 0) {
+
+      throw new Error(
+        "No camera was detected."
+      );
+
+    }
+
+
+    let cameraId =
+      cameras[0].id;
+
+
+    /*
+     * Prefer rear camera
+     */
+    for (
+      let i = 0;
+      i < cameras.length;
+      i++
+    ) {
+
+      const label =
+        String(
+          cameras[i].label || ""
+        ).toLowerCase();
+
+
+      if (
+        label.includes("back") ||
+        label.includes("rear") ||
+        label.includes("environment")
+      ) {
+
+        cameraId =
+          cameras[i].id;
+
+        break;
+
       }
 
-      scanner = new Html5Qrcode("reader");
+    }
 
-      const config = {
+
+    await scanner.start(
+
+      cameraId,
+
+      {
         fps: 10,
+
         qrbox: {
           width: 250,
           height: 250
         }
-      };
+      },
 
-      scanner.start(
-        { facingMode: "environment" },
-        config,
-        onScanSuccess,
-        onScanFailure
+      onScanSuccess,
+
+      onScanFailure
+
+    );
+
+
+    document.getElementById(
+      "startButton"
+    ).disabled = true;
+
+
+    document.getElementById(
+      "stopButton"
+    ).disabled = false;
+
+
+    showResult(
+      "scanning",
+      "Scanner is ready",
+      "Point the camera at the volunteer's QR code."
+    );
+
+
+  } catch (error) {
+
+    console.error(error);
+
+    scanner = null;
+
+    showResult(
+      "error",
+      "Camera Error",
+      escapeHtml(
+        error.message ||
+        String(error)
       )
-      .then(function() {
+    );
 
-        document.getElementById("startButton")
-          .disabled = true;
+  }
 
-        document.getElementById("stopButton")
-          .disabled = false;
+}
 
-        showResult(
-          "scanning",
-          "Scanner is ready",
-          "Point the camera at the volunteer's QR code."
-        );
 
-      })
-      .catch(function(error) {
+/*
+ * Stop scanner
+ */
+async function stopScanner() {
 
-        scanner = null;
+  if (!scanner) {
+    return;
+  }
 
-        showResult(
-          "error",
-          "Camera Error",
-          "Unable to access the camera.<br><br>" +
-          error
-        );
 
+  try {
+
+    await scanner.stop();
+
+    scanner.clear();
+
+  } catch (error) {
+
+    console.error(error);
+
+  }
+
+
+  scanner = null;
+
+
+  document.getElementById(
+    "startButton"
+  ).disabled = false;
+
+
+  document.getElementById(
+    "stopButton"
+  ).disabled = true;
+
+
+  showResult(
+    "scanning",
+    "Scanner stopped",
+    "Click Start Scanner to begin again."
+  );
+
+}
+
+
+/*
+ * QR detected
+ */
+function onScanSuccess(decodedText) {
+
+  if (isProcessing) {
+    return;
+  }
+
+
+  isProcessing = true;
+
+
+  const registrationId =
+    String(decodedText || "")
+      .trim()
+      .toUpperCase();
+
+
+  showResult(
+    "scanning",
+    "Checking registration...",
+    escapeHtml(registrationId)
+  );
+
+
+  checkIn(registrationId);
+
+}
+
+
+/*
+ * Ignore normal scanning failures
+ */
+function onScanFailure(error) {
+  // Ignore.
+}
+
+
+/*
+ * Send Registration ID to Apps Script
+ */
+function checkIn(registrationId) {
+
+  const callbackName =
+    "checkInCallback_" +
+    Date.now();
+
+
+  window[callbackName] =
+    function(result) {
+
+      delete window[callbackName];
+
+      handleCheckInResult(result);
+
+    };
+
+
+  const script =
+    document.createElement("script");
+
+
+  const url =
+    BACKEND_URL +
+    "?action=checkIn" +
+    "&registrationId=" +
+    encodeURIComponent(registrationId) +
+    "&callback=" +
+    callbackName;
+
+
+  script.src = url;
+
+
+  script.onerror =
+    function() {
+
+      delete window[callbackName];
+
+      handleCheckInError({
+        message:
+          "Unable to contact the check-in server."
       });
-    }
+
+    };
 
 
-    function stopScanner() {
+  document.body.appendChild(script);
 
-      if (!scanner) {
-        return;
-      }
-
-      scanner.stop()
-        .then(function() {
-
-          scanner.clear();
-          scanner = null;
-
-          document.getElementById("startButton")
-            .disabled = false;
-
-          document.getElementById("stopButton")
-            .disabled = true;
-
-          showResult(
-            "scanning",
-            "Scanner stopped",
-            "Click Start Scanner to begin again."
-          );
-
-        })
-        .catch(function(error) {
-
-          console.error(error);
-
-        });
-    }
+}
 
 
-    function onScanSuccess(decodedText) {
+/*
+ * Handle Apps Script result
+ */
+function handleCheckInResult(result) {
 
-      if (isProcessing) {
-        return;
-      }
+  if (
+    result.type ===
+    "CHECKED_IN"
+  ) {
 
-      isProcessing = true;
+    showResult(
+      "success",
+      "✓ CHECK-IN SUCCESSFUL",
+      `
+        <div class="name">
+          ${escapeHtml(result.name)}
+        </div>
 
-      // The QR code contains the Registration ID.
-      const registrationId =
-        decodedText.trim().toUpperCase();
+        <div class="registration">
+          ${escapeHtml(result.registrationId)}
+        </div>
 
-      showResult(
-        "scanning",
-        "Checking registration...",
-        registrationId
-      );
+        <p>
+          <strong>Time:</strong><br>
+          ${escapeHtml(result.checkInTime)}
+        </p>
+      `
+    );
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzvjVtNwZJ5aF6K0kPcIDzn2x0Wu0LXkO4Uh0AI6ad7I8ZWdeO2zDPyXkn6Rn92LSUp/exec';
 
-const callbackName = 'checkInCallback_' + Date.now();
+    setTimeout(
+      function() {
 
-window[callbackName] = function(result) {
-  delete window[callbackName];
+        isProcessing = false;
 
-  const script = document.getElementById(callbackName);
-  if (script) {
-    script.remove();
+        resetResult();
+
+      },
+      3000
+    );
+
+
+    return;
   }
 
-  handleCheckInResult(result);
-};
 
-const script = document.createElement('script');
+  if (
+    result.type ===
+    "ALREADY_CHECKED_IN"
+  ) {
 
-script.id = callbackName;
+    showResult(
+      "warning",
+      "⚠ ALREADY CHECKED IN",
+      `
+        <div class="name">
+          ${escapeHtml(result.name)}
+        </div>
 
-script.src =
-  APPS_SCRIPT_URL +
-  '?action=checkIn' +
-  '&registrationId=' + encodeURIComponent(registrationId) +
-  '&callback=' + encodeURIComponent(callbackName);
+        <div class="registration">
+          ${escapeHtml(result.registrationId)}
+        </div>
 
-script.onerror = function() {
-  delete window[callbackName];
+        <p>
+          This volunteer has already checked in.
+        </p>
 
-  const failedScript = document.getElementById(callbackName);
-  if (failedScript) {
-    failedScript.remove();
+        <p>
+          <strong>Previous check-in:</strong><br>
+          ${escapeHtml(result.checkInTime)}
+        </p>
+      `
+    );
+
+
+    setTimeout(
+      function() {
+
+        isProcessing = false;
+
+        resetResult();
+
+      },
+      4000
+    );
+
+
+    return;
   }
 
-  handleCheckInError({
-    message: 'Unable to connect to the registration system.'
-  });
-};
 
-document.body.appendChild(script);
-    }
-
-
-    function onScanFailure(error) {
-      // Ignore normal scanning failures.
-    }
-
-
-    function handleCheckInResult(result) {
-
-      if (result.type === "CHECKED_IN") {
-
-        showResult(
-          "success",
-          "✓ CHECK-IN SUCCESSFUL",
-          `
-            <div class="name">
-              ${escapeHtml(result.name)}
-            </div>
-
-            <div class="registration">
-              ${escapeHtml(result.registrationId)}
-            </div>
-
-            <p>
-              <strong>Time:</strong>
-              ${escapeHtml(result.checkInTime)}
-            </p>
-          `
-        );
-
-        // Allow another scan after a short delay.
-        setTimeout(function() {
-          isProcessing = false;
-          resetResult();
-        }, 3000);
-
-        return;
-      }
+  showResult(
+    "error",
+    "✕ INVALID QR CODE",
+    `
+      ${escapeHtml(result.message)}
+      <br><br>
+      ${escapeHtml(
+        result.registrationId || ""
+      )}
+    `
+  );
 
 
-      if (result.type === "ALREADY_CHECKED_IN") {
+  setTimeout(
+    function() {
 
-        showResult(
-          "warning",
-          "⚠ ALREADY CHECKED IN",
-          `
-            <div class="name">
-              ${escapeHtml(result.name)}
-            </div>
+      isProcessing = false;
 
-            <div class="registration">
-              ${escapeHtml(result.registrationId)}
-            </div>
+      resetResult();
 
-            <p>
-              This volunteer was already checked in.
-            </p>
+    },
+    3000
+  );
 
-            <p>
-              <strong>Previous check-in:</strong><br>
-              ${escapeHtml(result.checkInTime)}
-            </p>
-          `
-        );
-
-        setTimeout(function() {
-          isProcessing = false;
-          resetResult();
-        }, 4000);
-
-        return;
-      }
+}
 
 
-      showResult(
-        "error",
-        "✕ INVALID QR CODE",
-        `
-          ${escapeHtml(result.message)}
-          <br><br>
-          ${escapeHtml(result.registrationId || "")}
-        `
-      );
+/*
+ * Server error
+ */
+function handleCheckInError(error) {
 
-      setTimeout(function() {
-        isProcessing = false;
-        resetResult();
-      }, 3000);
-    }
+  console.error(error);
 
 
-    function handleCheckInError(error) {
-
-      console.error(error);
-
-      showResult(
-        "error",
-        "System Error",
-        "Unable to process this registration.<br><br>" +
-        escapeHtml(error.message || String(error))
-      );
-
-      setTimeout(function() {
-        isProcessing = false;
-        resetResult();
-      }, 4000);
-    }
+  showResult(
+    "error",
+    "System Error",
+    escapeHtml(
+      error.message ||
+      String(error)
+    )
+  );
 
 
-    function resetResult() {
+  setTimeout(
+    function() {
 
-      showResult(
-        "scanning",
-        "Ready to scan",
-        "Point the camera at the volunteer's QR code."
-      );
-    }
+      isProcessing = false;
 
+      resetResult();
 
-    function showResult(type, title, message) {
+    },
+    4000
+  );
 
-      const result =
-        document.getElementById("result");
-
-      result.className = type;
-
-      result.innerHTML =
-        `<div class="big">${title}</div>` +
-        `<div>${message}</div>`;
-    }
+}
 
 
-    function escapeHtml(text) {
+/*
+ * Reset result
+ */
+function resetResult() {
 
-      return String(text || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
+  showResult(
+    "scanning",
+    "Ready to scan",
+    "Point the camera at the volunteer's QR code."
+  );
 
-  </script>
+}
+
+
+/*
+ * Display result
+ */
+function showResult(
+  type,
+  title,
+  message
+) {
+
+  const result =
+    document.getElementById(
+      "result"
+    );
+
+
+  result.className =
+    type;
+
+
+  result.innerHTML =
+    `<div class="big">${title}</div>` +
+    `<div>${message}</div>`;
+
+}
+
+
+/*
+ * Escape HTML
+ */
+function escapeHtml(text) {
+
+  return String(text || "")
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+    .replace(
+      /</g,
+      "&lt;"
+    )
+    .replace(
+      />/g,
+      "&gt;"
+    )
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+    .replace(
+      /'/g,
+      "&#039;"
+    );
+
+}
+
+</script>
 
 </body>
 </html>
